@@ -113,7 +113,7 @@ def getshow_urls(nr, title):
         lnk = i.find("link").string.encode("ascii")
         if re.search("teckentolkad", lnk):
             continue
-        urls.append(lnk)
+        urls = [lnk] + urls
     print "Found", len(urls), "episodes"
     return urls
 
