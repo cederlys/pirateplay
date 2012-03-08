@@ -48,7 +48,7 @@ def load_series():
         title, directory = line.split(" ", 1)
         title = title.strip()
         directory = directory.strip()
-        DIRS[title] = directory
+        DIRS[title] = directory.decode("utf-8")
         TITLES.append(title)
 
 def cmdline(url, ignore_downloaded, execute):
