@@ -141,7 +141,7 @@ def main():
         shows = getshows()
         for series in TITLES:
             for url in getshow_urls(shows[series], series):
-                print cmdline(url, False, False)
+                print cmdline(url, False, False).encode('utf-8')
         return
 
 if __name__ == '__main__':
