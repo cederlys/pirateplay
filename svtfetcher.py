@@ -121,7 +121,7 @@ def main():
     args = sys.argv[1:]
     if len(args) == 0:
         print "Usage: series-fetcher { --print-shows | --download | --dry-run }\n"
-        print "What to download is hardcoded in the script."
+        print "What to download is specified in ~/.svtfetch."
         return
     if args[0] == "--print-shows":
         shows = getshows().keys()
