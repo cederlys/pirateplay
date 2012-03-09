@@ -32,6 +32,8 @@ import os
 import re
 import sys
 import urllib2
+import multiprocessing
+
 import BeautifulSoup
 
 import pirateplay
@@ -51,6 +53,35 @@ def load_series():
         DIRS[title] = directory.decode("utf-8")
         TITLES.append(title)
 
+class Downloader(object):
+    def __init__(self, exe, d, tmppath, fullpath):
+        self.__exe = exe
+        self.__d = d
+        self.__tmppath = tmppath
+        self.__fullpath = fullpath
+
+    def execute(self):
+        if os.path.exists(self.__fullpath):
+            print "Already downloaded", self.__fullpath
+            return
+        size = None
+
+        # Resume does not work if the file is too small.
+        try:
+            size = os.stat(self.__tmppath).st_size
+            print "Temporary file of size", size, ":", self.__tmppath
+        except OSError:
+            pass
+        if size is not None and size < 1048576:
+            print "Unlinking", self.__tmppath
+            os.unlink(self.__tmppath)
+
+        print "Downloading", self.__fullpath
+        os.system((u"mkdir -p " + self.__d).encode('utf-8'))
+        if os.system(self.__exe.encode('utf-8')) == 0:
+            os.system((u"mv " + self.__tmppath + u" " + self.__fullpath)
+                      .encode('utf-8'))
+
 def cmdline(url, ignore_downloaded, execute):
     best = 0
     m = re.search("svtplay.se/[^/]+/[^/]+/([^/]+)/([^/?]+)", url)
@@ -59,13 +90,21 @@ def cmdline(url, ignore_downloaded, execute):
     d = DIRS[series]
     fullpath = os.path.join(d, file + ".mp4")
     if ignore_downloaded and os.path.exists(fullpath):
-        print "Already downloaded:", fullpath
         return None
     tmppath = fullpath + ".tmp"
+    if os.path.exists(tmppath):
+        print "Resuming download:", fullpath
+    else:
+        print "New download:", fullpath
 
     best_alt = None
-    for alt in pirateplay.remove_duplicates(pirateplay.generate_getcmd(
-            url, False, output_file=tmppath)):
+    all_cmds = pirateplay.generate_getcmd(url, False, output_file=tmppath)
+    try:
+        non_dups = pirateplay.remove_duplicates(all_cmds)
+    except ValueError:
+        print "Cannot find cmd for", fullpath
+        return None
+    for alt in non_dups:
         m = re.search("quality: ([0-9]*) kbps", alt)
         if not m:
             print "SKIPPING", alt
@@ -83,10 +122,7 @@ def cmdline(url, ignore_downloaded, execute):
     exe = exe.replace(" ", " --resume ", 1)
 
     if execute:
-        print exe
-        os.system((u"mkdir -p " + d).encode('utf-8'))
-        if os.system(exe.encode('utf-8')) == 0:
-            os.system((u"mv " + tmppath + u" " + fullpath).encode('utf-8'))
+        return Downloader(exe, d, tmppath, fullpath)
 
     return exe
 
@@ -117,7 +153,13 @@ def getshow_urls(nr, title):
     print "Found", len(urls), "episodes"
     return urls
 
+def run_download(data):
+    print "Download", data[0], "of", queuesize
+    data[1].execute()
+
 def main():
+    global queuesize
+
     args = sys.argv[1:]
     if len(args) == 0:
         print "Usage: series-fetcher { --print-shows | --download | --dry-run }\n"
@@ -132,9 +174,20 @@ def main():
     if args[0] == "--download":
         load_series()
         shows = getshows()
+        queue = []
         for series in TITLES:
+            if series not in shows:
+                continue
             for url in getshow_urls(shows[series], series):
-                cmdline(url, True, True)
+                downloader = cmdline(url, True, True)
+                if downloader:
+                    queue.append(downloader)
+        queuesize = len(queue)
+        if queuesize > 0:
+            pool = multiprocessing.Pool(min(7, queuesize))
+            pool.map(run_download, list(enumerate(queue)), 1)
+            pool.close()
+            pool.join()
         return
     if args[0] == "--dry-run":
         load_series()
