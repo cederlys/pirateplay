@@ -88,7 +88,7 @@ def cmdline(url, ignore_downloaded, execute):
     series = m.group(1)
     file = m.group(2)
     d = DIRS[series]
-    fullpath = os.path.join(d, file + ".mp4")
+    fullpath = os.path.join(d, file + ".flv")
     if ignore_downloaded and os.path.exists(fullpath):
         return None
     tmppath = fullpath + ".tmp"
