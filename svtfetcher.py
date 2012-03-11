@@ -104,12 +104,14 @@ def cmdline(url, ignore_downloaded, execute):
     except ValueError:
         print "Cannot find cmd for", fullpath
         return None
+    bitrates = []
     for alt in non_dups:
         m = re.search("quality: ([0-9]*) kbps", alt)
         if not m:
             print "SKIPPING", alt
             continue
         q = int(m.group(1))
+        bitrates.append(q)
         if q > best:
             best = q
             best_alt = alt
@@ -120,6 +122,9 @@ def cmdline(url, ignore_downloaded, execute):
 
     exe = best_alt.splitlines()[1]
     exe = exe.replace(" ", " --resume ", 1)
+
+    print "Selecting bitrate", best, "among", ', '.join(map(str,
+                                                            sorted(bitrates)))
 
     if execute:
         return Downloader(exe, d, tmppath, fullpath)
