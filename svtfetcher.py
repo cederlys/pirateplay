@@ -201,6 +201,10 @@ def main():
             for url in getshow_urls(shows[series], series):
                 print cmdline(url, False, False).encode('utf-8')
         return
+    if args[0] == "--manual":
+        load_series()
+        cmdline(args[1], True, True).execute()
+        return
 
 if __name__ == '__main__':
     main()
