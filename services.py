@@ -1,4 +1,7 @@
 from urllib import unquote
+import re
+import httplib
+from pyamf import remoting
 
 def fix_playpath(url):
 	return url.replace('/mp4:', '/ -y mp4:')
@@ -19,29 +22,66 @@ def decrypt_pbs_url(url):
 	cipher = AES.new(key, AES.MODE_CBC, iv)
 	return cipher.decrypt(data) + '&format=SMIL'
 
+def get_brightcove_streams(video_player, player_id, player_key, publisher_id, const):
+	env = remoting.Envelope(amfVersion=3)
+	env.bodies.append(
+		(
+			"/1", 
+			remoting.Request(
+				target="com.brightcove.player.runtime.PlayerMediaFacade.findMediaById", 
+				body=[const, player_id, video_player, publisher_id],
+				envelope=env
+			)
+		)
+	)
+	env = str(remoting.encode(env).read())
+
+	conn = httplib.HTTPConnection("c.brightcove.com")
+	conn.request("POST", "/services/messagebroker/amf?playerKey=" + player_key, env, {'content-type': 'application/x-amf'})
+	response = conn.getresponse().read()
+	rtmp = ''
+	for rendition in remoting.decode(response).bodies[0][1].body['renditions']:
+		rtmp += '"%sx%s:%s";' % (rendition['frameWidth'], rendition['frameHeight'], rendition['defaultURL'])
+	print rtmp
+	return rtmp
+
+def build_brightcove_dict(s):
+	return dict(pair.split('=') for pair in s.split('&'))
+
 service = [
-		[
-			{	'service-name':		'SVT-play',
-			#	're'		:	r'(http://)?(www\.)?svtplay.se/(?P<url>.+)',
-			#	'template'	:	'http://svtplay.se/%(url)s'},
-				're'		:	r'(http://)?(www\.)?svtplay.se/(?P<path>(t|v)/\d+)',
-				'template'	:	'http://svtplay.se/popup/minispelare/%(path)s'},
-			#{	're'		:	r'(?:name="movie" value="(?P<swf_url>[^"]+)".*?)?(?P<url>rtmpe?://[^,]+),bitrate:(?P<bitrate>[0-9]+)',
-			#{	're'		:	r'(?:name="movie" value="(?P<swf_url>[^"]+)".*subtitle=(?P<sub>[^&]+).*?)?(?P<url>rtmpe?://[^,]+),bitrate:(?P<bitrate>[0-9]+)',
-			{	're'		:	r'(?:name="movie" value="(?P<swf_url>[^"]+)".*?)?(?P<url>rtmpe?://[^,]+),bitrate:(?P<bitrate>[0-9]+)(?=.*?subtitle=(?P<sub>[^&]*))',
-				'template'	:	'#quality: %(bitrate)s kbps; subtitles: %(sub)s;\nrtmpdump --swfVfy http://svtplay.se%(swf_url)s -r %(url)s -o %(output_file)s'}],
-		[#SVT-play-alternate/flv clip
-			{	're'		:	r'(http://)?(www\.)?svtplay.se/(?P<url>.+)',
-				'template'	:	'http://svtplay.se/%(url)s'},
-			#{	're'		:	r'(http://)?(www\.)?svtplay.se/(?P<path>(t|v)/\d+)',
-			#	'template'	:	'http://svtplay.se/popup/minispelare/%(path)s'},
-			{	're'		:	r'pathflv=(?P<url>http?://[^&]+)',
-				'template'	:	'#\n%(url)s'}],
-		[#SVT-play-alternate/flv clip-rtmp
-			{	're'		:	r'(http://)?(www\.)?svtplay.se/(?P<url>.+)',
-				'template'	:	'http://svtplay.se/%(url)s'},
-			{	're'		:	r'(?:name="movie" value="(?P<swf_url>[^"]+)".*?)pathflv=(?P<url>rtmpe?://[^&]+)',
-				'template'	:	'#\nrtmpdump -W "http://svtplay.se%(swf_url)s" -r "%(url)s" -o %(output_file)s'}],
+		#[
+			#{	'service-name':		'SVT-play',
+			##	're'		:	r'(http://)?(www\.)?svtplay.se/(?P<url>.+)',
+			##	'template'	:	'http://svtplay.se/%(url)s'},
+				#'re'		:	r'^(http://)?(www\.)?svtplay.se/(?P<path>(t|v)/\d+)',
+				#'template'	:	'http://svtplay.se/popup/minispelare/%(path)s'},
+			##{	're'		:	r'(?:name="movie" value="(?P<swf_url>[^"]+)".*?)?(?P<url>rtmpe?://[^,]+),bitrate:(?P<bitrate>[0-9]+)',
+			##{	're'		:	r'(?:name="movie" value="(?P<swf_url>[^"]+)".*subtitle=(?P<sub>[^&]+).*?)?(?P<url>rtmpe?://[^,]+),bitrate:(?P<bitrate>[0-9]+)',
+			#{	're'		:	r'(?:name="movie" value="(?P<swf_url>[^"]+)".*?)?url:(?P<url>rtmpe?://[^,]+),bitrate:(?P<bitrate>[0-9]+)(?=.*?subtitle=(?P<sub>[^&]*))',
+				#'decode':		lambda cmd: cmd if re.search('webb\d_\d+p', cmd) is None else cmd + ' -v' ,
+				#'template'	:	'#quality: %(bitrate)s kbps; subtitles: %(sub)s;\nrtmpdump --swfVfy http://svtplay.se%(swf_url)s -r %(url)s -o %(output_file)s'}],
+		#[#SVT-play-alternate/flv clip
+			#{	're'		:	r'^(http://)?(www\.)?svtplay.se/(?P<url>.+)',
+				#'template'	:	'http://svtplay.se/%(url)s'},
+			##{	're'		:	r'(http://)?(www\.)?svtplay.se/(?P<path>(t|v)/\d+)',
+			##	'template'	:	'http://svtplay.se/popup/minispelare/%(path)s'},
+			#{	're'		:	r'pathflv=(?P<url>http?://[^&]+)',
+				#'template'	:	'#\n%(url)s'}],
+		#[#SVT-play-alternate/flv clip-rtmp
+			#{	're'		:	r'^(http://)?(www\.)?svtplay.se/(?P<url>.+)',
+				#'template'	:	'http://svtplay.se/%(url)s'},
+			#{	're'		:	r'(?:name="movie" value="(?P<swf_url>[^"]+)".*?)pathflv=(?P<url>rtmpe?://[^&]+)',
+				#'template'	:	'#\nrtmpdump -W "http://svtplay.se%(swf_url)s" -r "%(url)s" -o %(output_file)s'}],
+		[#SVT-play-beta
+			{	're':			r'^(http://)?(www\.)?svtplay\.se/(?P<path>.*)',
+				'template':		'http://svtplay.se/%(path)s?type=embed&output=json'},
+			{	're':			r'"url":"(?P<url>rtmp[^"]+)".*?"bitrate":(?P<bitrate>\d+)(?=.*?"subtitleReferences":\[{"url":"(?P<sub>[^"]*))',
+				'template':		'#quality: %(bitrate)s; subtitles: %(sub)s;\nrtmpdump -r "%(url)s" --swfVfy "http://www.svtplay.se/public/swf/video/svtplayer-2012.15.swf" -o "output_file"'}],
+		[#SVT-play-http
+			{	're':			r'^(http://)?(www\.)?svtplay\.se/(?P<path>.*)',
+				'template':		'http://svtplay.se/%(path)s?type=embed&output=json'},
+			{	're':			r'"url":"(?P<url>http://[^"]+)".*?"bitrate":(?P<bitrate>\d+)(?=.*?"subtitleReferences":\[{"url":"(?P<sub>[^"]*))',
+				'template':		'#quality: %(bitrate)s; subtitles: %(sub)s;\n%(url)s'}],
 		[
 			{	'service-name':		'SR',
 				're'		:	r'(http://)?(www\.)?sverigesradio.se/(?P<url>.+)',
@@ -56,7 +96,13 @@ service = [
 				'template'	:	'#subtitles: %(sub)s;\nrtmpdump -r rtmp://streaming.ur.se/ -y %(ext)s:/%(url)s -a ondemand -o %(output_file)s'}],
 		[
 			{	'service-name':		'TV4-play',
-				're'		:	r'(http://)?(www\.)?tv4play.se/.*videoid=(?P<id>\d+).*',
+				're'		:	r'(http://)?(www\.)?tv4play.se/.*(videoid|vid)=(?P<id>\d+).*',
+				'template'	:	'http://premium.tv4play.se/api/web/asset/%(id)s/play'},
+			{	're'		:	r'(<playbackStatus>(?P<status>\w+).*?)?<bitrate>(?P<bitrate>[0-9]+)</bitrate>.*?(?P<base>rtmpe?://[^<]+).*?(?P<url>mp4:/[^<]+)(?=.*?(?P<sub>http://((anytime)|(prima))\.tv4(play)?\.se/multimedia/vman/smiroot/[^<]+))?',
+				'template'	:	'#quality: %(bitrate)s kbps; subtitles: %(sub)s;\nrtmpdump -W "http://www.tv4play.se/flash/tv4playflashlets.swf" -r "%(base)s" -y "%(url)s" -o "%(output_file)s"'}],
+		[
+			{	'service-name':		'Fotbollskanalen',
+				're'		:	r'(http://)?(www\.)?fotbollskanalen.se/.*(videoid|vid)=(?P<id>\d+).*',
 				'template'	:	'http://premium.tv4play.se/api/web/asset/%(id)s/play'},
 			{	're'		:	r'(<playbackStatus>(?P<status>\w+).*?)?<bitrate>(?P<bitrate>[0-9]+)</bitrate>.*?(?P<base>rtmpe?://[^<]+).*?(?P<url>mp4:/[^<]+)(?=.*?(?P<sub>http://anytime.tv4.se/multimedia/vman/smiroot/[^<]+))?',
 				'template'	:	'#quality: %(bitrate)s kbps; subtitles: %(sub)s;\nrtmpdump -W "http://www.tv4play.se/flash/tv4playflashlets.swf" -r "%(base)s" -y "%(url)s" -o "%(output_file)s"'}],
@@ -65,7 +111,7 @@ service = [
 				're'		:	r'(http://)?(www\.)?tv[368]play.se/.*(?:play/(?P<id>\d+)).*',
 				'template'	:	'http://viastream.viasat.tv/PlayProduct/%(id)s'},
 			{	're'		:	r'<SamiFile>(?P<sub>[^<]*).*<Video>.*<BitRate>(?P<bitrate>\d+).*?<Url><!\[CDATA\[(?P<url>rtmp[^\]]+)',
-				'template'	:	'#quality: %(bitrate)s kbps; subtitles: %(sub)s;\nrtmpdump -W http://flvplayer-viastream-viasat-tv.origin.vss.viasat.tv/play/swf/player110420.swf -r %(url)s -o %(output_file)s',
+				'template'	:	'#quality: %(bitrate)s kbps; subtitles: %(sub)s;\nrtmpdump -W http://flvplayer.viastream.viasat.tv/play/swf/player120328.swf -r %(url)s -o %(output_file)s',
 				'decode':		fix_playpath}],
 		[#MTG-alternate
 			{	're'		:	r'(http://)?(www\.)?tv[368]play.se/.*(?:play/(?P<id>\d+)).*',
@@ -73,7 +119,7 @@ service = [
 			{	're'		:	r'<SamiFile>(?P<sub>[^<]*).*<Video>.*<BitRate>(?P<bitrate>\d+).*?<Url><!\[CDATA\[(?P<url>http[^\]]+)',
 				'template'	:	'%(url)s'},
 			{	're'		:	r'<Url>(?P<url>[^<]+)',
-				'template'	:	'#quality: %(bitrate)s kbps; subtitles: %(sub)s;\nrtmpdump -W http://flvplayer-viastream-viasat-tv.origin.vss.viasat.tv/play/swf/player110420.swf -r %(url)s -o %(output_file)s',
+				'template'	:	'#quality: %(bitrate)s kbps; subtitles: %(sub)s;\nrtmpdump -W http://flvplayer.viastream.viasat.tv/play/swf/player120328.swf -r %(url)s -o %(output_file)s',
 				'decode':		fix_playpath}],
 		[
 			{	'service-name':		'Aftonbladet-TV',
@@ -96,14 +142,20 @@ service = [
 				're'		:	r'Location: (?P<url>.*?)\n',
 				'template'	:	'#quality: %(quality)s;\n%(url)s'}],
 		[
-			{	'service-name':		'Kanal5-play, Kanal9-play',
-				're'		:	r'(http://)?(www\.)?kanal(?P<n>5|9)play.se/(?P<url>.+)',
-				'template'	:	'http://kanal%(n)splay.se/%(url)s'},
+			{	'service-name':		'Kanal9-play',
+				're'		:	r'(http://)?(www\.)?kanal9play.se/(?P<url>.+)',
+				'template'	:	'http://kanal9play.se/%(url)s'},
 			{	're'		:	r'@videoPlayer" value="(?P<video_player>[^"]+)"',
 				'template'	:	'kanal5://%(video_player)s'},
 			{
 				're'		:	r'"(?P<height>\d+)x(?P<width>\d+):(?P<URL>[^&]+)&(?P<path>[^"]+)";',
 				'template'	:	'#quality: %(height)sx%(width)s;\nrtmpdump --swfVfy http://admin.brightcove.com/viewer/us1.25.04.01.2011-05-24182704/connection/ExternalConnection_2.swf -r %(URL)s -y %(path)s -o %(output_file)s'}],
+		[
+			{	'service-name':		'Kanal5-play',
+				're':			r'(http://)?(www\.)?kanal5play.se/.*video/(?P<id>\d+)',
+				'template':		'http://www.kanal5play.se/api/getVideo?format=FLASH&videoId=%(id)s'},
+			{	're':			r'"bitrate":(?P<bitrate>\d+).*?"source":"(?P<path>[^"]+)"(?=.*?"streamBaseUrl":"(?P<base>[^"]+)")',
+				'template':		'#quality: %(bitrate)s\nrtmpdump -r "%(base)s" -y "%(path)s" -W "http://www.kanal5play.se/flash/StandardPlayer.swf" -o "%(output_file)s"'}],
 		[
 			{	'service-name':		'Axess-TV',
 				're'		:	r'(http://)?(www\.)?axess.se/(?P<url>.+)',
@@ -169,7 +221,7 @@ service = [
 				're':			r'(http://)?(www\.)?tv\.expressen\.se(?P<url>.+)',
 				'template':		'http://tv.expressen.se/%(url)s?standAlone=true&output=xml'},
 			{	're':			r"<vurl bitrate='(?P<bitrate>\d+)'><!\[CDATA\[(?P<rtmp_url>[^\]]+)",
-				'template':		'#quality: %(bitrate)s\nrtmpdump -r "%(rtmp_url)s" -W "http://tv.expressen.se/swf/swf/tv/player.swf" -o %(output_file)s'}],
+				'template':		'#quality: %(bitrate)s;\nrtmpdump -r "%(rtmp_url)s" -W "http://tv.expressen.se/swf/swf/tv/player.swf" -o %(output_file)s'}],
 		[
 			{	'service-name':		'PBS',
 				're':			r'(http://)?video\.pbs\.org/video/(?P<id>\d+)',
@@ -178,26 +230,33 @@ service = [
 				'template':		'%(encrypted_url)s',
 				'decode':		decrypt_pbs_url},
 			{	're':			r'<meta base="(?P<base>[^"]+).*?<ref src="(?P<path>[^"]+)',
-				'template':		'#\nrtmpdump -r "%(base)s" -y mp4:%(path)s -W "http://www-tc.pbs.org/s3/pbs.videoportal-prod.cdn/media/swf/PBSPlayer.swf" -o %(output_file)s'}],
-		[
-			{	're':			r'(http://)?headweb\.com/(?P<path>.*)',
-				'template':		'http://headweb.com/%(path)s'},
-			{	're':			r'\sid:(?P<id>\d+),',
-				'template':		'http://api.headweb.com/v4/stream/%(id)s?apikey=d91b8d77fe2f4c3dbbebbad9ea5dd201&authmode=raw'},
-			{	're':			r'(<streamurl>(?P<base>[^<]+).*?<streamid>\d+\?(?P<stream_id>[^<]+).*?)?<bitrate rate="(?P<bitrate>\d+)"',
-				'template':		'#quality: %(bitrate)s kbps\nrtmpdump -r "%(base)s" -y "%(id)s_%(bitrate)s?%(stream_id)s" -W "http://sc.headweb.com/.c2089/flash/headwebplayer.swf" -o %(output_file)s'}],
-		[
-			{	're':			r'(http://)?headweb\.com/(?P<path>.*)',
-				'template':		'http://headweb.com/%(path)s'},
-			{	're':			r'\sid:(?P<id>\d+),',
-				'template':		'http://api.headweb.com/v4/stream/%(id)s?apikey=d91b8d77fe2f4c3dbbebbad9ea5dd201&authmode=raw'},
-			{	're':			r'<streamurl>(?P<base>[^<]+).*?<streamid>\d+\?(?P<stream_id>[^<]+).*?',
-				'template':		'#\nrtmpdump -r "%(base)s" -y "%(id)s?%(stream_id)s" -W "http://sc.headweb.com/.c2089/flash/headwebplayer.swf" -o %(output_file)s'}],
+				'template':		'#\nrtmpdump -r "%(base)s" -y mp4:%(path)s -W "http://www-tc.pbs.org/s3/pbs.videoportal-prod.cdn/media/swf/PBSPlayer.swf" -o "%(output_file)s"'}],
 		[
 			{	're':			r'(http://)?((www|video)\.)?.cnbc.com/.*video=(?P<video>\d+).*',
 				'template':		'http://video.cnbc.com/gallery/?video=%(video)s'},
 			{	're':			r',formatLink:\'[^|]+\|(?P<xml_url>[^\']+)',
 				'template':		'%(xml_url)s'},
 			{	're':			r'<choice>\s*<url>(?P<rtmp_url>rtm.+?)</url>',
-				'template':		'#\nrtmpdump -r "%(rtmp_url)s"'}]
+				'template':		'#\nrtmpdump -r "%(rtmp_url)s"'}],
+		[
+			{	'service-name':		'Filmarkivet',
+				're':			'(http://)?(www\.)?filmarkivet.se/(?P<path>.*)',
+				'template':		'http://filmarkivet.se/%(path)s'},
+			{	're':			r"movieName\s=\s'(?P<movie_name>[^']+)'.*?streamer:\s'(?P<base>[^']+)'",
+				'template':		'#\nrtmpdump -r "%(base)s%(movie_name)s" -o "%(output_file)s"'}],
+		[
+			{	'service-name':		'Elitserien-play',
+				're':			r'(http://)?(www\.)?elitserienplay.se/.*?video\.(?P<video_player>\d+)',
+				'template':		'brightcove:video_player=%(video_player)s&player_id=1199515803001&publisher_id=656327052001&const=2ba01fac60a902ffc3c6322c3ef5546dbcf393e4&player_key=AQ~~,AAAAmNAkCuE~,RfA9vPhrJwdowytpDwHD00J5pjBMVHD6'},
+			{
+				're':			r'"(?P<height>\d+)x(?P<width>\d+):(?P<URL>[^&]+)&(?P<path>[^\?]+)(?P<query>\?[^"]+)";',
+				'template':		'#quality: %(height)sx%(width)s;\nrtmpdump --swfVfy http://admin.brightcove.com/viewer/us1.25.04.01.2011-05-24182704/connection/ExternalConnection_2.swf -r "%(URL)s%(query)s" -y %(path)s -o %(output_file)s'}],
+		[
+			{	'service-name':		'Discovery',
+				're':			r'(http://)?(www\.)?dsc\.discovery\.com/videos/(?P<path>.*)',
+				'template':		'http://dsc.discovery.com/videos/%(path)s'},
+			{	're':			r'flash_video_url":"(?P<url>[^"]+)"',
+				'template':		'%(url)s'},
+			{	're':			r'(<meta name="httpBase" content="(?P<base>[^"]+)".*?)?<video src="(?P<video_path>[^"]+)" system-bitrate="(?P<bitrate>\d+)"',
+				'template':		'#quality: %(bitrate)s;\n%(base)s/%(video_path)s'}]
 ]

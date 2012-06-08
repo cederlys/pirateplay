@@ -2,7 +2,7 @@
 
 import cStringIO, getopt, urllib2, re, sys
 from os import system
-from services import service
+from services import service, get_brightcove_streams, build_brightcove_dict
 from kanal5 import get_kanal5
 from httplib import BadStatusLine
 
@@ -23,7 +23,7 @@ def convert_rtmpdump(rtmpdump_cmd, convert):
 	# Do we realy want to convert?
 	if convert and cmd.startswith('rtmpdump'):
 		args = cmd[9:].split() # Strip 'rtmpdump ' and split
-		optlist = getopt.getopt(args, 'r:o:W:y:a:', ['rtmp=', 'swfVfy=', 'playpath=', 'app='])[0]
+		optlist = getopt.getopt(args, 'r:o:W:y:a:v', ['rtmp=', 'swfVfy=', 'playpath=', 'app=', 'live'])[0]
 		rtmp_string = ""
 		for option, value in optlist:
 			if option == '--rtmp' or option == '-r':
@@ -34,6 +34,8 @@ def convert_rtmpdump(rtmpdump_cmd, convert):
 				rtmp_string += ' playpath=' + value.strip('"')
 			elif option == '--app' or option == '-a':
 				rtmp_string += ' app=' + value.strip('"')
+			elif option == '--live' or option == '-v':
+				rtmp_string += ' live=1'
 		return meta + '\n' + rtmp_string
 	# ..or just pass through?
 	else:
@@ -73,6 +75,9 @@ def generate_getcmd(url, librtmp = False, **args):
 				except urllib2.URLError: #Kanal5
 					if next_url.startswith('kanal5://'):
 						content = get_kanal5(next_url[9:]).encode('ascii')
+					elif next_url.startswith('brightcove:'):
+						brightcove_params = build_brightcove_dict(next_url[11:])
+						content = get_brightcove_streams(**brightcove_params).encode('ascii')
 					else:
 						yielded = True
 						yield convert_rtmpdump(next_url, librtmp)
