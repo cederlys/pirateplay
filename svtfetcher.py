@@ -39,6 +39,7 @@ import BeautifulSoup
 import pirateplay
 
 resume = False
+PARALLELISM = 1
 
 def load_series():
     global DIRS, TITLES
@@ -195,10 +196,14 @@ def main():
                     queue.append(downloader)
         queuesize = len(queue)
         if queuesize > 0:
-            pool = multiprocessing.Pool(min(7, queuesize))
-            pool.map(run_download, list(enumerate(queue)), 1)
-            pool.close()
-            pool.join()
+            if PARALLELISM > 1:
+                pool = multiprocessing.Pool(min(PARALLELISM, queuesize))
+                pool.map(run_download, list(enumerate(queue)), 1)
+                pool.close()
+                pool.join()
+            else:
+                for data in enumerate(queue):
+                    run_download(data)
         return
     if args[0] == "--dry-run":
         load_series()
