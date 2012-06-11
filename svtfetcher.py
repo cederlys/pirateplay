@@ -38,6 +38,8 @@ import BeautifulSoup
 
 import pirateplay
 
+resume = False
+
 def load_series():
     global DIRS, TITLES
 
@@ -72,7 +74,7 @@ class Downloader(object):
             print "Temporary file of size", size, ":", self.__tmppath
         except OSError:
             pass
-        if size is not None and size < 1048576:
+        if size is not None and (size < 1048576 or not resume):
             print "Unlinking", self.__tmppath
             os.unlink(self.__tmppath)
 
@@ -93,7 +95,10 @@ def cmdline(url, ignore_downloaded, execute):
         return None
     tmppath = fullpath + ".tmp"
     if os.path.exists(tmppath):
-        print "Resuming download:", fullpath
+        if resume:
+            print "Resuming download:", fullpath
+        else:
+            print "Restarting download:", fullpath
     else:
         print "New download:", fullpath
 
@@ -121,7 +126,8 @@ def cmdline(url, ignore_downloaded, execute):
         return None
 
     exe = best_alt.splitlines()[1]
-    exe = exe.replace(" ", " --resume ", 1)
+    if resume:
+        exe = exe.replace(" ", " --resume ", 1)
 
     print "Selecting bitrate", best, "among", ', '.join(map(str,
                                                             sorted(bitrates)))
