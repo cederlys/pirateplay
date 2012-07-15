@@ -88,11 +88,9 @@ class Downloader(object):
             os.system((u"mv " + self.__tmppath + u" " + self.__fullpath)
                       .encode('utf-8'))
 
-def cmdline(url, ignore_downloaded, execute):
+def cmdline(series, url, ignore_downloaded, execute):
     best = 0
-    m = re.search("svtplay.se/[^/]+/[^/]+/([^/]+)/([^/?]+)", url)
-    series = m.group(1)
-    file = m.group(2)
+    file = url.split("/")[-1]
     d = DIRS[series]
     fullpath = os.path.join(d, file + ".flv")
     if ignore_downloaded and os.path.exists(fullpath.encode("utf-8")):
@@ -107,7 +105,8 @@ def cmdline(url, ignore_downloaded, execute):
         print "New download:", fullpath.encode("utf-8")
 
     best_alt = None
-    all_cmds = pirateplay.generate_getcmd(url, False, output_file=tmppath)
+    all_cmds = pirateplay.generate_getcmd("http://www.svtplay.se" + url,
+                                          False, output_file=tmppath)
     try:
         non_dups = pirateplay.remove_duplicates(all_cmds)
     except ValueError:
@@ -115,7 +114,8 @@ def cmdline(url, ignore_downloaded, execute):
         return None
     bitrates = []
     for alt in non_dups:
-        m = re.search("quality: ([0-9]*) kbps", alt)
+        lines = alt.splitlines()
+        m = re.search("quality: ([0-9]*)", lines[0])
         if not m:
             print "SKIPPING", alt
             continue
@@ -126,10 +126,11 @@ def cmdline(url, ignore_downloaded, execute):
             best_alt = alt
 
     if not best_alt:
-        print "No match found for", url
+        print "No bitrate match found for", url
         return None
 
-    exe = best_alt.splitlines()[1]
+    lines = best_alt.splitlines()
+    exe = lines[1]
     if resume:
         exe = exe.replace(" ", " --resume ", 1)
 
@@ -143,28 +144,39 @@ def cmdline(url, ignore_downloaded, execute):
 
 def getshows():
     print "Fetching shows"
-    data = urllib2.urlopen("http://svtplay.se/alfabetisk").read()
+    data = urllib2.urlopen("http://www.svtplay.se/alfabetisk").read()
     soup = BeautifulSoup.BeautifulSoup(data)
     shows = {}
-    for ul in soup.findAll("ul", "leter-list"):
-        for li in ul.findAll('li', recursive=False):
-            for a in li.findAll('a', recursive=False):
-                [empty, t, nr, title] = a["href"].split("/")
-                shows[title] = nr
+    for a in soup.findAll("a", "playLetterLink"):
+        [empty, title] = a["href"].split("/")
+        shows[title] = a.string
     print "Found", len(shows), "shows"
     return shows
 
-def getshow_urls(nr, title):
-    print "Fetching", title
-    url = "http://feeds.svtplay.se/v1/video/list/" + nr + "/" + title + "?expression=full"
-    data = urllib2.urlopen(url).read()
-    soup = BeautifulSoup.BeautifulStoneSoup(data)
+def getshow_urls(readable_title, title):
+    print "Fetching %s (%s)" % (readable_title, title)
     urls = []
-    for i in soup.findAll("item"):
-        lnk = i.find("link").string.encode("ascii")
-        if re.search("teckentolkad", lnk):
-            continue
-        urls = [lnk] + urls
+    url = "http://www.svtplay.se/" + title
+    while True:
+        print "Fetching", url
+        try:
+            data = urllib2.urlopen(url).read()
+        except urllib2.HTTPError:
+            print "FAILED to fetch", url
+            break
+        soup = BeautifulSoup.BeautifulSoup(data)
+        pager_section = soup.find("div", "playPagerSections")
+        if pager_section is None:
+            break
+        for a in pager_section.findAll("a", "playLink"):
+            lnk = a["href"]
+            # print a.find("h5").string.strip(), lnk
+            urls = [lnk] + urls
+        pager = soup.find("ul", "playLargePager")
+        next_page = pager.find("a", "playPagerNext")
+        if next_page is None or "disabled" in next_page["class"]:
+            break
+        url = "http://www.svtplay.se" + next_page["href"]
     print "Found", len(urls), "episodes"
     return urls
 
@@ -194,7 +206,7 @@ def main():
             if series not in shows:
                 continue
             for url in getshow_urls(shows[series], series):
-                downloader = cmdline(url, True, True)
+                downloader = cmdline(series, url, True, True)
                 if downloader:
                     queue.append(downloader)
         queuesize = len(queue)
@@ -212,12 +224,18 @@ def main():
         load_series()
         shows = getshows()
         for series in TITLES:
+            if series not in shows:
+                continue
             for url in getshow_urls(shows[series], series):
-                print cmdline(url, False, False).encode('utf-8')
+                print cmdline(series, url, False, False).encode('utf-8')
         return
     if args[0] == "--manual":
         load_series()
-        cmdline(args[1], True, True).execute()
+        downloader = cmdline(FIXME, args[1], True, True)
+        if downloader:
+            downloader.execute()
+        else:
+            sys.exit(1)
         return
 
 if __name__ == '__main__':
