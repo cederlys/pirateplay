@@ -41,6 +41,8 @@ import pirateplay
 resume = False
 PARALLELISM = 1
 
+SHOW_INDEX = "http://www.svtplay.se/alfabetisk"
+
 def load_series():
     global DIRS, TITLES
 
@@ -145,7 +147,7 @@ def cmdline(series, url, ignore_downloaded, execute):
 
 def getshows():
     print "Fetching shows"
-    data = urllib2.urlopen("http://www.svtplay.se/alfabetisk").read()
+    data = urllib2.urlopen(SHOW_INDEX).read()
     soup = BeautifulSoup.BeautifulSoup(data)
     shows = {}
     for a in soup.findAll("a", "playLetterLink"):
@@ -203,8 +205,11 @@ def main():
         load_series()
         shows = getshows()
         queue = []
+        notfound = []
         for series in TITLES:
             if series not in shows:
+                print "Could not find", series
+                notfound.append(series)
                 continue
             for url in getshow_urls(shows[series], series):
                 downloader = cmdline(series, url, True, True)
@@ -220,6 +225,16 @@ def main():
             else:
                 for data in enumerate(queue):
                     run_download(data)
+        if len(notfound) > 0:
+            print
+            print "WARNING: The following series in ~/.svtfetch was not found on"
+            print SHOW_INDEX
+            print "Perhaps they are no longer available, or have been renamed."
+            print
+            for show in notfound:
+                print "  " + show
+            print
+            print "A total of %d shows were not found." % len(notfound)
         return
     if args[0] == "--dry-run":
         load_series()
