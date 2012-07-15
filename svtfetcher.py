@@ -63,23 +63,26 @@ class Downloader(object):
         self.__tmppath = tmppath
         self.__fullpath = fullpath
 
+    def __str__(self):
+        return unicode(self).encode("utf-8")
+
     def execute(self):
-        if os.path.exists(self.__fullpath):
-            print "Already downloaded", self.__fullpath
+        if os.path.exists(self.__fullpath.encode("utf-8")):
+            print "Already downloaded", self.__fullpath.encode("utf-8")
             return
         size = None
 
         # Resume does not work if the file is too small.
         try:
-            size = os.stat(self.__tmppath).st_size
-            print "Temporary file of size", size, ":", self.__tmppath
+            size = os.stat(self.__tmppath.encode("utf-8")).st_size
+            print "Temporary file of size", size, ":", self.__tmppath.encode("utf-8")
         except OSError:
             pass
         if size is not None and (size < 1048576 or not resume):
-            print "Unlinking", self.__tmppath
-            os.unlink(self.__tmppath)
+            print "Unlinking", self.__tmppath.encode("utf-8")
+            os.unlink(self.__tmppath.encode("utf-8"))
 
-        print "Downloading", self.__fullpath
+        print "Downloading", self.__fullpath.encode("utf-8")
         os.system((u"mkdir -p " + self.__d).encode('utf-8'))
         if os.system(self.__exe.encode('utf-8')) == 0:
             os.system((u"mv " + self.__tmppath + u" " + self.__fullpath)
@@ -92,16 +95,16 @@ def cmdline(url, ignore_downloaded, execute):
     file = m.group(2)
     d = DIRS[series]
     fullpath = os.path.join(d, file + ".flv")
-    if ignore_downloaded and os.path.exists(fullpath):
+    if ignore_downloaded and os.path.exists(fullpath.encode("utf-8")):
         return None
     tmppath = fullpath + ".tmp"
-    if os.path.exists(tmppath):
+    if os.path.exists(tmppath.encode("utf-8")):
         if resume:
-            print "Resuming download:", fullpath
+            print "Resuming download:", fullpath.encode("utf-8")
         else:
-            print "Restarting download:", fullpath
+            print "Restarting download:", fullpath.encode("utf-8")
     else:
-        print "New download:", fullpath
+        print "New download:", fullpath.encode("utf-8")
 
     best_alt = None
     all_cmds = pirateplay.generate_getcmd(url, False, output_file=tmppath)
