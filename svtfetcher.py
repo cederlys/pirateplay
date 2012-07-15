@@ -147,13 +147,21 @@ def cmdline(series, url, ignore_downloaded, execute):
 
 def getshows():
     print "Fetching shows"
-    data = urllib2.urlopen(SHOW_INDEX).read()
+    req = urllib2.urlopen(SHOW_INDEX)
+    data = req.read()
+    if req.getcode() != 200:
+        print "Got code %d instead of 200.  Error page:" % req.getcode()
+        print data
+        return {}
     soup = BeautifulSoup.BeautifulSoup(data)
     shows = {}
     for a in soup.findAll("a", "playLetterLink"):
         [empty, title] = a["href"].split("/")
         shows[title] = a.string
     print "Found", len(shows), "shows"
+    if len(shows) == 0:
+        print "Got %d bytes from %s (around 50-80 kB is normal)" % (
+            len(data), SHOW_INDEX)
     return shows
 
 def getshow_urls(readable_title, title):
