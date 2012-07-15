@@ -84,6 +84,7 @@ class Downloader(object):
 
         print "Downloading", self.__fullpath.encode("utf-8")
         os.system((u"mkdir -p " + self.__d).encode('utf-8'))
+        print "EXE", self.__exe.encode('utf-8')
         if os.system(self.__exe.encode('utf-8')) == 0:
             os.system((u"mv " + self.__tmppath + u" " + self.__fullpath)
                       .encode('utf-8'))
